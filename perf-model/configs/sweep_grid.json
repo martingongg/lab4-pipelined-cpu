@@ -1,0 +1,49 @@
+{
+  "base": {
+    "seed": 1,
+    "requesters": 4,
+    "dtlb": { "entries": 32, "assoc": "full", "hit_cycles": 1, "page_bytes": 4096 },
+    "walker": { "count": 1, "levels": 3 },
+    "memory": { "access_cycles": 40 },
+    "retire_in_order": true
+  },
+  "experiments": [
+    {
+      "name": "working_set_sweep",
+      "policies": ["InOrderFifo", "RoundRobin", "IdAwareBypass"],
+      "workloads": ["zipf", "tiled_gemm", "kv_cache"],
+      "working_set_pages": [16, 32, 64, 128, 256, 512, 1024],
+      "walkers": [1],
+      "retire_in_order": [true],
+      "transactions": 100000
+    },
+    {
+      "name": "policy_workload_matrix",
+      "policies": ["InOrderFifo", "RoundRobin", "IdAwareBypass"],
+      "workloads": ["sequential", "strided", "random", "zipf", "pointer_chase", "tiled_gemm", "kv_cache"],
+      "working_set_pages": [256],
+      "walkers": [1],
+      "retire_in_order": [true, false],
+      "transactions": 100000
+    },
+    {
+      "name": "walker_scaling",
+      "policies": ["InOrderFifo", "RoundRobin", "IdAwareBypass"],
+      "workloads": ["zipf", "tiled_gemm", "kv_cache"],
+      "working_set_pages": [256],
+      "walkers": [1, 2, 4],
+      "retire_in_order": [true],
+      "transactions": 100000
+    },
+    {
+      "name": "pagesize_comparison",
+      "policies": ["InOrderFifo", "IdAwareBypass"],
+      "workloads": ["tiled_gemm", "kv_cache"],
+      "working_set_bytes": [16777216, 33554432, 67108864],
+      "page_bytes": [4096, 2097152],
+      "walkers": [1],
+      "retire_in_order": [true],
+      "transactions": 100000
+    }
+  ]
+}

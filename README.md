@@ -1,6 +1,17 @@
-# EE 469 — Pipelined ARM CPU
+# EE 469 — Pipelined ARM CPU & Translation-Path Performance Model
 
-A 64-bit, 5-stage pipelined ARM CPU built from the Lab 3 / Lab 4 specifications and the existing single-cycle CPU at <https://github.com/EuntaeKi/EE-469-Projects>.
+A 64-bit, 5-stage pipelined ARM LEGv8 CPU in SystemVerilog paired with a cycle-driven **C++17 virtual-memory translation-path performance model** (`perf-model/`).
+
+| Layer | Location | Language / Tools | Scope |
+|---|---|---|---|
+| **Core RTL** | Repo root (`*.sv`, `*.do`) | SystemVerilog, ModelSim/Questa | 64-bit 5-stage pipelined integer core (`IF → ID → EX → MEM → WB`), EX/MEM forwarding, branch delay slots, exhaustive primitive testbenches, ideal single-cycle physical memories (`instructmem.sv`, `datamem.sv`). |
+| **Translation-Path Performance Model** | [`perf-model/`](perf-model/) | C++17, CMake, GoogleTest, Python (`numpy`, `pandas`, `matplotlib`) | Cycle-driven transaction-level architectural model of a DTLB, multi-level hardware page-table walker, request arbiter (`InOrderFifo`, `RoundRobin`, `IdAwareBypass`), memory latency model, and reorder/retire stage servicing `IF`, `Load`, `Store`, and `Prefetch` streams. |
+
+---
+
+## Part 1 — 5-Stage Pipelined ARM CPU (SystemVerilog RTL)
+
+Built from the Lab 3 / Lab 4 specifications and the existing single-cycle CPU at <https://github.com/EuntaeKi/EE-469-Projects>.
 
 Branches resolve in the **Decode** stage (one delay slot per branch / load), and EX→ID and MEM→ID forwarding paths are provided so that back-to-back data dependencies execute correctly without stalls (assuming the load-use delay slot is honored).
 
@@ -108,3 +119,33 @@ Edit `instructmem.sv` and uncomment the desired `\`define BENCHMARK` line. The r
 - `test10_forwarding.arm` — exercises ALL forwarding paths
 - `test11_Sort.arm` — bubble sort
 - `test12_Fibonacci.arm` — Fibonacci sequence
+
+---
+
+## Part 2 — Virtual-Memory Translation-Path Performance Model (`perf-model/`)
+
+The core RTL in `CPU.sv` assumes ideal single-cycle physical instruction and data memories (`instructmem.sv`, `datamem.sv`). To analyze how virtual-memory address translation affects fetch and load/store latency on a real processor, [`perf-model/`](perf-model/) adds a self-contained **C++17 cycle-driven performance model** of a DTLB, multi-level page-table walker, request arbiter, memory latency model, and reorder/retire stage.
+
+### Quickstart
+
+```bash
+cmake -S perf-model -B perf-model/build -DCMAKE_BUILD_TYPE=Release
+cmake --build perf-model/build -j
+ctest --test-dir perf-model/build --output-on-failure
+```
+
+### Key Highlights (Measured)
+
+- **Three arbitration policies:** `InOrderFifo`, `RoundRobin`, and `IdAwareBypass` (hit-under-miss with MSHR coalescing and in-order ID retirement via ROB).
+- **Seven synthetic & ML-shaped workloads + CSV trace replay:** `sequential`, `strided`, `random`, `zipf`, `pointer_chase`, `tiled_gemm` (blocked `C += A × B`), and `kv_cache` (LLM decode streaming + random paged-block indirection).
+- **Headline HoL-blocking findings** (32-entry full-assoc DTLB, 1-cycle hit, 3-level walk, 40-cycle memory, 1 walker, 256-page working set = 8× DTLB reach, 100k txns, in-order retirement):
+  - **Zipfian:** `IdAwareBypass` reduces mean completion latency by **62.1%** (`1,671.3 → 633.9` cycles), median (`p50`) completion latency from **1,712 → 5 cycles**, and HoL stall cycles by **96.1%** (`98.1% → 4.4%` of runtime), while increasing throughput by **+14.8%** at a cost of **32×** higher max ROB occupancy (`1 → 32`).
+  - **KV-Cache:** `IdAwareBypass` reduces mean completion latency by **69.1%** (`402.5 → 124.5` cycles; `-88.7%` for the `IF` stream alone) and eliminates HoL stall cycles (`92.0% → 0.0%`).
+  - **2 MiB hugepages (32 MiB footprint):** Raises `tiled_gemm` and `kv_cache` DTLB hit rates to **99.97%** and **99.95%**, cutting mean completion latency to **~31.3 cycles** (`-94.4%` vs. 4 KiB `InOrderFifo` on `tiled_gemm`).
+- **Automated verification (17 CTest checks):** 15 GoogleTest unit/analytical/invariant/trend tests, an independent Python LRU reference (`perf-model/scripts/ref_tlb.py`) matching C++ hit/miss counts exactly across 11 trace/event suites, and 5 deterministic golden-file regressions (`perf-model/scripts/regress.py`).
+
+For full architecture diagrams, complete sweep tables, plots, and modeling limitations, see:
+- [`perf-model/README.md`](perf-model/README.md) — Full results, figures, and usage
+- [`perf-model/docs/design.md`](perf-model/docs/design.md) — Microarchitecture specification, policy definitions, defaults, and limitations
+- [`perf-model/docs/validation.md`](perf-model/docs/validation.md) — Analytical derivations, invariants, Python reference, and regression setup
+
