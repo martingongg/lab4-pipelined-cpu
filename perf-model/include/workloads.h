@@ -33,13 +33,26 @@ class WorkloadGenerator {
   uint64_t total_transactions() const { return total_txns_; }
   uint64_t issued_count() const { return issued_; }
 
+  // Latest earliest_cycle across trace requests (0 for generated workloads).
+  // Sparse traces schedule work far in the future; the simulator's cycle
+  // bound must account for that idle wait or it trips its livelock guard.
+  uint64_t last_scheduled_cycle() const { return max_earliest_cycle_; }
+
   // True if trace mode dictates explicit per-requester queues.
   bool is_trace_mode() const { return cfg_.workload.type == "trace"; }
+
+  // Layout accessors for tests. The GEMM problem (dim, IF footprint) and the
+  // KV-cache data region must be identical across translation page sizes for
+  // a fixed working-set size; only the translation geometry may change.
+  uint64_t gemm_dim() const { return gemm_.dim; }
+  uint64_t gemm_if_bytes() const { return gemm_.if_bytes; }
+  uint64_t kv_if_bytes() const { return kv_if_bytes_; }
+  uint64_t kv_data_bytes() const { return kv_data_bytes_; }
 
  private:
   struct GemmState {
     uint64_t base_if = 0;
-    uint64_t if_pages = 1;
+    uint64_t if_bytes = 16384;  // Fixed instruction footprint (see init_tiled_gemm).
     uint64_t base_a = 0;
     uint64_t base_b = 0;
     uint64_t base_c = 0;
@@ -84,13 +97,14 @@ class WorkloadGenerator {
   GemmState gemm_;
 
   // KV-cache layout
-  uint64_t kv_if_pages_ = 1;
+  uint64_t kv_if_bytes_ = 16384;  // Fixed instruction footprint (see init_kv_cache).
   uint64_t kv_data_base_ = 0;
   uint64_t kv_data_bytes_ = 4096;
 
   // Trace replay buffer
   std::vector<GeneratedReq> trace_reqs_;
   size_t trace_idx_ = 0;
+  uint64_t max_earliest_cycle_ = 0;
 };
 
 }  // namespace perf

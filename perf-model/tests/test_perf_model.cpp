@@ -348,6 +348,61 @@ TEST(Workloads, CommentedCsvTraceReplayWorks) {
   EXPECT_EQ(res.dtlb_hits + res.dtlb_misses, 4u);
 }
 
+// A trace may legitimately schedule its only request far in the future.
+// That idle wait is not livelock: the cycle bound must cover it, and the
+// request then completes with the standard cold-miss latency (H + L*M).
+TEST(Workloads, SparseTraceWithFutureTimestampCompletes) {
+  const std::string trace_path = "/tmp/perf_model_sparse_trace_test.csv";
+  {
+    std::ofstream ofs(trace_path);
+    ofs << "1000001,0,0x1000\n";
+  }
+  SimConfig cfg = make_base_config();
+  cfg.workload.type = "trace";
+  cfg.workload.trace_path = trace_path;
+
+  SimResults res = Simulator(cfg).run();
+  std::remove(trace_path.c_str());
+
+  EXPECT_EQ(res.transactions_completed, 1u);
+  EXPECT_EQ(res.dtlb_hits + res.dtlb_misses, 1u);
+  // Issues at cycle 1000001, cold miss costs H + L*M = 1 + 3*40 = 121 cycles.
+  EXPECT_EQ(res.total_cycles, 1000001u + 121u);
+}
+
+// The GEMM problem (matrix dimension, IF footprint) and the KV-cache data
+// region must not change with the translation page size: a fixed 32 MiB
+// working set used to build dim 1664 at 4 KiB pages but dim 1616 at 2 MiB
+// pages, so page-size comparisons measured different address workloads.
+TEST(Workloads, LayoutIndependentOfPageSize) {
+  {
+    auto layout_at = [](uint64_t page_bytes) {
+      SimConfig cfg = make_base_config();
+      cfg.dtlb.page_bytes = page_bytes;
+      cfg.workload.type = "tiled_gemm";
+      cfg.workload.working_set_bytes = 32ull * 1024 * 1024;
+      WorkloadGenerator gen(cfg);
+      return std::pair<uint64_t, uint64_t>(gen.gemm_dim(), gen.gemm_if_bytes());
+    };
+    EXPECT_EQ(layout_at(4096), layout_at(2097152));
+    EXPECT_EQ(layout_at(4096).first, 1664u);
+    EXPECT_EQ(layout_at(4096).second, 16384u);
+  }
+  {
+    auto layout_at = [](uint64_t page_bytes) {
+      SimConfig cfg = make_base_config();
+      cfg.dtlb.page_bytes = page_bytes;
+      cfg.workload.type = "kv_cache";
+      cfg.workload.working_set_bytes = 32ull * 1024 * 1024;
+      WorkloadGenerator gen(cfg);
+      return std::pair<uint64_t, uint64_t>(gen.kv_if_bytes(), gen.kv_data_bytes());
+    };
+    EXPECT_EQ(layout_at(4096), layout_at(2097152));
+    EXPECT_EQ(layout_at(4096).first, 16384u);
+    EXPECT_EQ(layout_at(4096).second, 32ull * 1024 * 1024 - 16384u);
+  }
+}
+
 // Sanity Trend 1: Latency rises and hit rate drops as working set exceeds DTLB reach.
 TEST(SanityTrends, LatencyRisesAboveDtlbReach) {
   SimConfig small_ws = make_base_config();

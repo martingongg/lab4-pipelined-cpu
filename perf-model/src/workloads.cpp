@@ -13,6 +13,21 @@ namespace {
 constexpr uint64_t kCacheLineBytes = 64;
 constexpr uint64_t kBaseVirtualAddr = 0x0000100000000000ULL;
 
+// Instruction-footprint size for the hot IF stream, derived from the working-set
+// size only, on a fixed 4 KiB reference page. The layout must not depend on
+// the translation page size: previously the IF size came from num_pages_, so a
+// fixed 32 MiB working set got a 16 KiB IF at 4 KiB pages but a 2 MiB IF at
+// 2 MiB pages, changing the GEMM matrix dimension 1664 -> 1616 and making
+// page-size comparisons measure different problems. Sizing on the reference
+// page reproduces the old 4 KiB-page layout exactly at every footprint while
+// keeping dim (and the KV data region) identical across page sizes.
+uint64_t fixed_if_bytes(uint64_t footprint_bytes) {
+  constexpr uint64_t kLayoutPageBytes = 4096;
+  const uint64_t layout_pages = std::max<uint64_t>(1, footprint_bytes / kLayoutPageBytes);
+  const uint64_t if_pages = std::max<uint64_t>(1, std::min<uint64_t>(4, layout_pages / 32));
+  return if_pages * kLayoutPageBytes;
+}
+
 uint64_t parse_u64_auto(const std::string& token) {
   size_t idx = 0;
   uint64_t val = std::stoull(token, &idx, 0);
@@ -101,8 +116,12 @@ void WorkloadGenerator::init_pointer_chase() {
 void WorkloadGenerator::init_tiled_gemm() {
   // Reserve a small hot instruction footprint (~2%, at least 1 page) and split remaining
   // footprint across A, B, and C square matrices (FP32, 4 bytes/element).
-  gemm_.if_pages = std::max<uint64_t>(1, std::min<uint64_t>(4, num_pages_ / 32));
-  const uint64_t if_bytes = gemm_.if_pages * page_bytes_;
+  // The IF size is a function of the working-set size only (fixed_if_bytes):
+  // deriving it from num_pages_ made the GEMM problem itself change with the
+  // translation page size (dim 1664 -> 1616 for a fixed 32 MiB working set),
+  // so page-size sweeps compared different address workloads.
+  gemm_.if_bytes = fixed_if_bytes(footprint_bytes_);
+  const uint64_t if_bytes = gemm_.if_bytes;
   const uint64_t mat_budget = (footprint_bytes_ > if_bytes) ? (footprint_bytes_ - if_bytes) : page_bytes_;
   const uint64_t per_matrix_bytes = std::max<uint64_t>(page_bytes_, mat_budget / 3);
 
@@ -122,8 +141,11 @@ void WorkloadGenerator::init_tiled_gemm() {
 
 void WorkloadGenerator::init_kv_cache() {
   // Hot decode loop + metadata pages for IF stream; remaining footprint is paged KV-cache.
-  kv_if_pages_ = std::max<uint64_t>(1, std::min<uint64_t>(4, num_pages_ / 32));
-  const uint64_t if_bytes = kv_if_pages_ * page_bytes_;
+  // Same page-size independence as the GEMM layout: the IF footprint is a
+  // function of the working-set size only, so the KV data region (and the
+  // page-size comparison sweep) is identical across page sizes.
+  kv_if_bytes_ = fixed_if_bytes(footprint_bytes_);
+  const uint64_t if_bytes = kv_if_bytes_;
   kv_data_base_ = kBaseVirtualAddr + if_bytes;
   kv_data_bytes_ = (footprint_bytes_ > if_bytes) ? (footprint_bytes_ - if_bytes) : page_bytes_;
   for (uint32_t r = 0; r < cfg_.requesters; ++r) {
@@ -180,6 +202,9 @@ void WorkloadGenerator::init_trace() {
   if (trace_reqs_.empty()) {
     throw std::runtime_error("trace file contains no transactions: " + cfg_.workload.trace_path);
   }
+  for (const auto& req : trace_reqs_) {
+    max_earliest_cycle_ = std::max(max_earliest_cycle_, req.earliest_cycle);
+  }
   total_txns_ = trace_reqs_.size();
 }
 
@@ -192,7 +217,7 @@ uint64_t WorkloadGenerator::next_gemm_addr(uint32_t src) {
 
   // Stream 0 acts as hot Instruction Fetch when multiple requesters exist.
   if (cfg_.requesters >= 2 && src == 0) {
-    const uint64_t if_bytes = gemm_.if_pages * page_bytes_;
+    const uint64_t if_bytes = gemm_.if_bytes;
     const uint64_t addr = gemm_.base_if + (gemm_.if_cursor % if_bytes);
     gemm_.if_cursor = (gemm_.if_cursor + kCacheLineBytes) % if_bytes;
     return addr;
@@ -259,7 +284,7 @@ uint64_t WorkloadGenerator::next_gemm_addr(uint32_t src) {
 
 uint64_t WorkloadGenerator::next_kv_addr(uint32_t src) {
   if (cfg_.requesters >= 2 && src == 0) {
-    const uint64_t if_bytes = kv_if_pages_ * page_bytes_;
+    const uint64_t if_bytes = kv_if_bytes_;
     const uint64_t addr = kBaseVirtualAddr + (stream_offsets_[0] % if_bytes);
     stream_offsets_[0] = (stream_offsets_[0] + kCacheLineBytes) % if_bytes;
     return addr;
