@@ -1,0 +1,10 @@
+{
+  "seed": 1,
+  "requesters": 4,
+  "dtlb": { "entries": 32, "assoc": "full", "hit_cycles": 1, "page_bytes": 4096 },
+  "walker": { "count": 1, "levels": 3 },
+  "memory": { "access_cycles": 40 },
+  "policy": "InOrderFifo",
+  "retire_in_order": true,
+  "workload": { "type": "zipf", "working_set_pages": 256, "transactions": 20000 }
+}

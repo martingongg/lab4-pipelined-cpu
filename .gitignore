@@ -1,0 +1,18 @@
+# Build artifacts
+perf-model/build/
+perf-model/results/runs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ModelSim / Questa
+work/
+transcript
+vsim.wlf
+
+# OS / Editor
+.DS_Store
+*.swp

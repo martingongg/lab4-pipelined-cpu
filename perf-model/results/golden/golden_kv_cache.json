@@ -1,0 +1,117 @@
+{
+  "config": {
+    "seed": 11,
+    "requesters": 4,
+    "requester_queue_depth": 8,
+    "dtlb": {
+      "entries": 32,
+      "assoc": "full",
+      "hit_cycles": 1,
+      "page_bytes": 4096
+    },
+    "walker": {
+      "count": 1,
+      "levels": 3,
+      "mshr_entries": 16,
+      "coalesce_misses": true
+    },
+    "memory": {
+      "access_cycles": 40,
+      "max_requests_per_cycle": 0,
+      "max_in_flight": 0
+    },
+    "policy": "IdAwareBypass",
+    "retire_in_order": true,
+    "retire": {
+      "in_order": true,
+      "rob_entries": 64,
+      "retire_width": 4
+    },
+    "workload": {
+      "type": "kv_cache",
+      "working_set_pages": 256,
+      "transactions": 20000,
+      "stride_bytes": 4096,
+      "zipf_alpha": 1.05,
+      "kv_random_prob": 0.08,
+      "gemm_tile": 32,
+      "pointer_chase_dependent": true
+    }
+  },
+  "metrics": {
+    "total_cycles": 230802,
+    "transactions_completed": 20000,
+    "throughput_txns_per_cycle": 0.086654,
+    "dtlb_hits": 12326,
+    "dtlb_misses": 7674,
+    "dtlb_hit_rate": 0.6163,
+    "walks_started": 1918,
+    "walks_completed": 1918,
+    "coalesced_misses": 5756,
+    "memory_requests": 5754,
+    "walker_utilization": 0.997218,
+    "hol_stall_cycles": 0,
+    "hol_stall_fraction": 0.0,
+    "hol_txn_wait_cycles": 0,
+    "rob_max_occupancy": 32,
+    "rob_mean_occupancy": 31.373212,
+    "completion_latency": {
+      "mean": 126.5442,
+      "p50": 12,
+      "p95": 480,
+      "p99": 719,
+      "min": 1,
+      "max": 1205
+    },
+    "retirement_latency": {
+      "mean": 368.86095,
+      "p50": 360,
+      "p95": 717,
+      "p99": 839,
+      "min": 7,
+      "max": 1205
+    },
+    "per_requester": [
+      {
+        "src": 0,
+        "label": "IF",
+        "transactions": 5016,
+        "hits": 4384,
+        "misses": 632,
+        "mean_completion_latency": 46.210526,
+        "mean_retirement_latency": 367.68441,
+        "max_retirement_latency": 1202
+      },
+      {
+        "src": 1,
+        "label": "Load",
+        "transactions": 4997,
+        "hits": 2634,
+        "misses": 2363,
+        "mean_completion_latency": 151.227537,
+        "mean_retirement_latency": 369.091255,
+        "max_retirement_latency": 1205
+      },
+      {
+        "src": 2,
+        "label": "Store",
+        "transactions": 4998,
+        "hits": 2685,
+        "misses": 2313,
+        "mean_completion_latency": 157.95098,
+        "mean_retirement_latency": 368.996399,
+        "max_retirement_latency": 1204
+      },
+      {
+        "src": 3,
+        "label": "Prefetch",
+        "transactions": 4989,
+        "hits": 2623,
+        "misses": 2366,
+        "mean_completion_latency": 151.126278,
+        "mean_retirement_latency": 369.67749,
+        "max_retirement_latency": 1203
+      }
+    ]
+  }
+}
