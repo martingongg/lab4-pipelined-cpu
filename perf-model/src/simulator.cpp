@@ -129,11 +129,17 @@ SimResults Simulator::run() {
 
   uint64_t cycle = 0;
   // Guard against accidental livelock bugs in tests or invalid custom configs.
+  // The bound must also cover scheduled idle time: a trace may legitimately
+  // schedule its first request far in the future (e.g. earliest_cycle =
+  // 1000001), and that wait is not livelock. Generated workloads schedule
+  // at the current cycle, so last_scheduled_cycle() is 0 for them and the
+  // bound is unchanged.
   const uint64_t max_cycles =
       std::max<uint64_t>(1000000ULL, workload_.total_transactions() *
                                          (cfg_.dtlb.hit_cycles +
                                           cfg_.walker.levels * cfg_.memory.access_cycles + 16) *
-                                         2);
+                                         2) +
+      workload_.last_scheduled_cycle();
 
   for (; cycle <= max_cycles; ++cycle) {
     walker_done.clear();
